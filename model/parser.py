@@ -1,3 +1,6 @@
+from typing import List
+
+
 def head(stack):
     try:
         return stack[0]
@@ -8,6 +11,62 @@ class Parser:
     def __init__(self, grammar):
         self.grammar = grammar
 
+    def __tree_from_derivation_seq(self, derivationString: List[str]) -> List:
+        result = [(derivationString[0].split('$')[0], -1, -1)]
+        i = 0
+        j = 0
+        while j < len(derivationString) and i < len(result):
+            top = result[i]
+            if top[0] not in self.grammar.N:
+                i += 1
+                continue
+            expandWith = None
+            while True:
+                if '$' not in derivationString[j]:
+                    j += 1
+                    continue
+                nonterminal, productionNumber = derivationString[j].split('$')
+                if nonterminal == top[0]:
+                    expandWith = (nonterminal, productionNumber)
+                    break
+                j += 1
+
+            nonterminal, productionNumber = expandWith
+            productionNumber = int(productionNumber)
+            production = self.grammar.P[(nonterminal,)][productionNumber]
+            for symbol in production:
+                result.append((symbol, i, len(result) + 1))
+            result[-1] = (*result[-1][:-1], -1)
+            i += 1
+        return result
+
+    # Descendant Recursive
+    def parse(self):
+        config = ParserConfig(self.grammar)
+        while config.s not in self.grammar.terminals and config.s != 'e':
+            if config.s == 'q':
+                if config.i == len(self.grammar.productions) and len(config.beta) == 0:
+                    config.success()
+                else:
+                    if head(config.beta) in self.grammar.non_terminals:
+                        config.expand()
+                    else:
+                        if head(config.beta) == "ai":
+                            config.advance()
+                        else:
+                            config.momentary_insuccess()
+            if config.s == 'b':
+                if head(config.alpha) == "a":
+                    config.back()
+                else:
+                    config.another_try()
+
+        if config.s == 'e':
+            print("[PARSER] -> Error")
+        else:
+            print("[PARSER] -> Sequence accepted")
+            config.build_string_of_production(config.alpha)
+
 class ParserConfig:
     def __init__(self, grammar):
         self.grammar = grammar
@@ -16,27 +75,27 @@ class ParserConfig:
         self.alpha = []
         self.beta = []
 
-    def __expand(self):
+    def expand(self):
         current = self.beta.pop()
         production = self.grammar.get_productions_for_non_terminal(current)
         if production.rules[0] != "epsilon":
             self.beta += reversed(production.rules[0])
         self.beta.append(production.rules[0] + "#0")
 
-    def __advance(self):
+    def advance(self):
         self.i += 1
         terminal = self.beta.pop()
         self.alpha.append(terminal)
 
-    def __momentary_insuccess(self):
+    def momentary_insuccess(self):
         self.s = 'b'
 
-    def __back(self):
+    def back(self):
         self.i -= 1
         terminal = self.beta.pop()
         self.alpha.append(terminal)
 
-    def __another_try(self):
+    def another_try(self):
         symbl = self.alpha.pop()
         non_terminal, production_nbr = symbl.split("#")
         production_nbr = int(production_nbr)
@@ -59,31 +118,5 @@ class ParserConfig:
             return
         self.beta.append(non_terminal)
 
-    def __success(self):
+    def success(self):
         self.s = 'f'
-
-    # Descendant Recursive
-    def parse(self):
-        while self.s not in self.grammar.terminals and self.s != 'e':
-            if self.s == 'q':
-                if self.i == len(self.grammar.productions) and len(self.beta) == 0:
-                    self.__success()
-                else:
-                    if head(self.beta) in self.grammar.non_terminals:
-                        self.__expand()
-                    else:
-                        if head(self.beta) == "ai":
-                            self.__advance()
-                        else:
-                            self.__momentary_insuccess()
-            if self.s == 'b':
-                if head(self.alpha) == "a":
-                    self.__back()
-                else:
-                    self.__another_try()
-
-        if self.s == 'e':
-            print("[PARSER] -> Error")
-        else:
-            print("[PARSER] -> Sequence accepted")
-            self.__build_string_of_production(self.alpha)
